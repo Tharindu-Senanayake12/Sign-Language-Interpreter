@@ -18,8 +18,7 @@ A **real-time sign language interpreter** that recognizes hand gestures using co
 
 ## Demo
 
-![Demo Screenshot](screenshots/demo.gif)
-*Replace this with actual screenshots or GIF of your app running.*
+
 
 ---
 
@@ -95,9 +94,9 @@ python app.py
 * `ESC` – Exit the application
 * `k` – Switch to keypoint logging mode
 * `n` – Switch to point history logging mode
-* `0-9` – Input gesture label for logging
+* `0-99` – Input gesture label for logging (can go for upto 100 different sign languages)
 * `Enter` – Confirm label
-* `p` – Save gesture sample for dataset
+* `p` – Save gesture sample for dataset (Capture)
 
 ---
 
@@ -129,3 +128,4 @@ python app.py
 
 
 Do you want me to do that version too?
+
