@@ -18,6 +18,7 @@ A **real-time sign language interpreter** that recognizes hand gestures using co
 
 ## Demo
 
+<img src="screenshots/dashboard.png" width="700"/>
 
 
 ---
@@ -125,5 +126,6 @@ python app.py
 * Build a **cross-platform GUI** or mobile application
 
 ---
+
 
 
