@@ -18,8 +18,7 @@ from PySide6.QtTextToSpeech import QTextToSpeech  # Native TTS Import
 # --- NLP ENGINE ---
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-# Global caches so we don't reload the massive AI model on every click, 
-# which would freeze the application.
+
 _nlp_tokenizer = None
 _nlp_model = None
 
@@ -50,8 +49,7 @@ class NLPWorker(QThread):
                 _nlp_tokenizer = AutoTokenizer.from_pretrained(model_name)
                 _nlp_model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
             
-            # 3. Process the raw keywords into a coherent sentence
-            # 'gecc:' is the specific prompt trigger for this Vennify grammar model
+            # 3. Process the raw keywords into a coherent sentence  -  Grammar model
             raw_text = "gecc: " + " ".join(self.text_buffer)
             inputs = _nlp_tokenizer(raw_text, return_tensors="pt", max_length=128, truncation=True)
             outputs = _nlp_model.generate(**inputs, max_length=64)
@@ -70,14 +68,20 @@ class NLPWorker(QThread):
             self.finished.emit(error_msg)
 
 
-# --- Logic Fallbacks ---
-# Mock classifier just in case the real model isn't downloaded yet.
+
+# --- Logic Fallbacks --- If the user hasn't set up the ML model yet, Fallback
 try:
     from model import KeyPointClassifier
 except ImportError:
     class KeyPointClassifier:
         def __call__(self, x): return 0, 0.95
 
+
+
+
+
+   
+# _____________Main Application Window________________
 
 class SignSpeakApp(QMainWindow):
     """
@@ -98,9 +102,11 @@ class SignSpeakApp(QMainWindow):
         self.current_proposed_word = None
         self.proposed_word_start_time = 0
 
-        # --- INIT NATIVE TTS ENGINE ---
-        # Used to speak the final translated sentence out loud
+
+        # ---  TEXT TO Speech  ---
+        # speak the final translated sentence
         self.tts = QTextToSpeech(self)
+
 
         # Initialize MediaPipe for Hand Tracking
         self.mp_hands = mp.solutions.hands
@@ -169,6 +175,8 @@ class SignSpeakApp(QMainWindow):
         
         cb_l = QHBoxLayout(self.control_bar)
         cb_l.setContentsMargins(25, 10, 25, 10)
+        
+        
         
         # Button: Reconstruct Sentence
         self.nlp_btn = QPushButton("✨ RECONSTRUCT SENTENCE")
@@ -355,6 +363,9 @@ class SignSpeakApp(QMainWindow):
         v.addWidget(txt)
         card.text_widget = txt
         return card
+
+
+
 
     # --- CORE COMPUTER VISION LOOP ---
 
