@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Sign Language Interpreter
 
 A **real-time sign language interpreter** that recognizes hand gestures using computer vision and AI. This project leverages **MediaPipe** for hand landmark detection and **TensorFlow** for gesture classification, providing both static and dynamic gesture recognition with optimized **TensorFlow Lite models** for fast inference.
