@@ -103,9 +103,11 @@ class SignSpeakApp(QMainWindow):
         self.proposed_word_start_time = 0
 
 
+
         # ---  TEXT TO Speech  ---
         # speak the final translated sentence
         self.tts = QTextToSpeech(self)
+
 
 
         # Initialize MediaPipe for Hand Tracking
@@ -122,6 +124,7 @@ class SignSpeakApp(QMainWindow):
         self.timer.timeout.connect(self.main_loop)
         self.timer.start(30)
 
+
     def load_labels(self):
         """Loads the gesture vocabulary from a CSV file."""
         try:
@@ -131,7 +134,7 @@ class SignSpeakApp(QMainWindow):
             self.keypoint_labels = ["HELLO", "ME", "GO", "STORE", "HELP"]
 
     def init_ui(self):
-        """Constructs the PySide6 Graphical User Interface."""
+        """Constructs the PyQT6 Graphical User Interface."""
         self.setWindowTitle("SignSpeak AI | NLP Integrated")
         self.setMinimumSize(1250, 850)
         self.setStyleSheet("background-color: #F2F2F7;")
@@ -178,8 +181,10 @@ class SignSpeakApp(QMainWindow):
         
         
         
+        
+    
         # Button: Reconstruct Sentence
-        self.nlp_btn = QPushButton("✨ RECONSTRUCT SENTENCE")
+        self.nlp_btn = QPushButton("RECONSTRUCT SENTENCE")
         self.nlp_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.nlp_btn.setStyleSheet("""
             QPushButton {
@@ -371,8 +376,7 @@ class SignSpeakApp(QMainWindow):
 
     def main_loop(self):
         """
-        Runs every 30ms. Reads the camera, detects hands, classifies the gesture, 
-        and updates the holographic UI overlay.
+        Runs every 30ms. Reads the camera, detects hands, classifies the gesture, and updates the holographic UI overlay.
         """
         ret, frame = self.cap.read()
         if not ret: return
@@ -469,6 +473,10 @@ class SignSpeakApp(QMainWindow):
         self.clear_btn.setEnabled(True)
         self.speech_btn.setEnabled(True) 
 
+
+
+
+
     # --- DRAWING / VISUALS ---
 
     def draw_holographic_ar(self, img, lp):
@@ -536,6 +544,9 @@ class SignSpeakApp(QMainWindow):
         self.history_cards[1].text_widget.setText(self.history_cards[0].text_widget.text())
         self.history_cards[0].text_widget.setText(word)
 
+
+
+
     # --- MATH & NORMALIZATION ---
 
     def calc_landmark_list(self, img, landmarks):
@@ -564,9 +575,19 @@ class SignSpeakApp(QMainWindow):
         return [n / max_v for n in temp]
 
 
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     app.setFont(QFont(".AppleSystemUIFont", 10))
     window = SignSpeakApp()
     window.show()
     sys.exit(app.exec())
+    
+    
+    
+    
+    
+    
+    
+    
+    
