@@ -1,139 +1,56 @@
 import sys
-import csv
-import copy
 import time
-import itertools
+import math
 from collections import deque
-
 import cv2 as cv
 import numpy as np
 import mediapipe as mp
+
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QPushButton, QFrame, 
-                               QGraphicsDropShadowEffect, QSizePolicy, QSlider)
-from PySide6.QtCore import QTimer, Qt, QThread, Signal
+                               QGraphicsDropShadowEffect, QSizePolicy, QComboBox)
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QCursor
-from PySide6.QtTextToSpeech import QTextToSpeech  # Native TTS Import
+from PySide6.QtTextToSpeech import QTextToSpeech
 
-# --- NLP ENGINE ---
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-
-
-_nlp_tokenizer = None
-_nlp_model = None
-
-class NLPWorker(QThread):
-    """
-    Background thread to handle heavy NLP text generation. 
-    Running this on the main thread would freeze the camera feed.
-    """
-    finished = Signal(str) # Signal emitted when the AI finishes thinking
-
-    def __init__(self, text_buffer):
-        super().__init__()
-        self.text_buffer = text_buffer
-
-    def run(self):
-        global _nlp_tokenizer, _nlp_model
-        
-        # 1. Handle empty buffer (User clicked without making signs)
-        if not self.text_buffer:
-            self.finished.emit("NO SIGNS DETECTED YET.")
-            return
-
-        try:
-            # 2. Explicitly load the T5 model and tokenizer into memory (First run only)
-            if _nlp_tokenizer is None or _nlp_model is None:
-                print("Loading AI Model into memory for the first time...")
-                model_name = "vennify/t5-base-grammar-correction"
-                _nlp_tokenizer = AutoTokenizer.from_pretrained(model_name)
-                _nlp_model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-            
-            # 3. Process the raw keywords into a coherent sentence  -  Grammar model
-            raw_text = "gecc: " + " ".join(self.text_buffer)
-            inputs = _nlp_tokenizer(raw_text, return_tensors="pt", max_length=128, truncation=True)
-            outputs = _nlp_model.generate(**inputs, max_length=64)
-            
-            # Decode the AI output and send it back to the UI
-            corrected_text = _nlp_tokenizer.decode(outputs[0], skip_special_tokens=True)
-            self.finished.emit(corrected_text.upper())
-            
-        except ImportError as ie:
-            error_msg = f"MISSING LIBRARY: {ie}. \nPlease run: pip install torch sentencepiece"
-            print(error_msg)
-            self.finished.emit(error_msg)
-        except Exception as e:
-            error_msg = f"ERROR: {str(e)}"
-            print(f"NLP Error: {e}")
-            self.finished.emit(error_msg)
-
-
-
-# --- Logic Fallbacks --- If the user hasn't set up the ML model yet, Fallback
-try:
-    from model import KeyPointClassifier
-except ImportError:
-    class KeyPointClassifier:
-        def __call__(self, x): return 0, 0.95
-
-
-
-
-
-   
-# _____________Main Application Window________________
-
-class SignSpeakApp(QMainWindow):
-    """
-    Main Application Window holding the UI, Camera Loop, and AI triggers.
-    """
+class RehabPoseApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.load_labels()
         
-        # Buffer to hold the last 5 recognized words for sentence reconstruction
-        self.word_buffer = deque(maxlen=5)
-        self.last_detected_word = None
+        # --- EXERCISE STATE & METRICS ---
+        self.is_exercising = False
+        self.rep_count = 0
+        self.current_stage = "down" 
+        self.feedback_text = "Select an exercise and press Start."
+        self.feedback_color = (255, 255, 255)
+        self.last_speech_time = 0
         
-        # --- STABILIZATION TRACKER ---
-        # Prevents "flickering" detections. The user must hold a sign for X seconds
-        # before it is officially added to the history buffer.
-        self.stabilization_threshold = 1.0 
-        self.current_proposed_word = None
-        self.proposed_word_start_time = 0
-
-
-        # ---  TEXT TO Speech  ---
-        # speak the final translated sentence
+        # Buffer to smooth out angle jitter (Rolling Average)
+        self.angle_buffer = deque(maxlen=5) 
+        
+        # --- TEXT TO SPEECH ---
         self.tts = QTextToSpeech(self)
+        
+        # --- MEDIAPIPE POSE (UPGRADED ACCURACY) ---
+        self.mp_pose = mp.solutions.pose
+        self.pose = self.mp_pose.Pose(
+            min_detection_confidence=0.85, # Increased strictness
+            min_tracking_confidence=0.85,  # Increased strictness
+            model_complexity=2             # 2 is the heaviest, most accurate 3D model
+        )
 
-
-        # Initialize MediaPipe for Hand Tracking
-        self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.7)
-        self.keypoint_classifier = KeyPointClassifier()
-
-        # Build the user interface
         self.init_ui()
         
-        # Start the Camera and Timer (Main Loop runs every 30ms / ~33 FPS)
+        # --- CAMERA SETUP ---
         self.cap = cv.VideoCapture(0)
         self.timer = QTimer()
         self.timer.timeout.connect(self.main_loop)
-        self.timer.start(30)
-
-    def load_labels(self):
-        """Loads the gesture vocabulary from a CSV file."""
-        try:
-            with open('model/keypoint_classifier/keypoint_classifier_label.csv', encoding='utf-8-sig') as f:
-                self.keypoint_labels = [row[0].upper() for row in csv.reader(f)]
-        except:
-            self.keypoint_labels = ["HELLO", "ME", "GO", "STORE", "HELP"]
+        self.timer.start(30) 
 
     def init_ui(self):
-        """Constructs the PySide6 Graphical User Interface."""
-        self.setWindowTitle("SignSpeak AI | NLP Integrated")
-        self.setMinimumSize(1250, 850)
+        """Constructs the modern PySide6 UI."""
+        self.setWindowTitle("Rehab AR Assistant | Precision HPE")
+        self.setMinimumSize(1300, 850)
         self.setStyleSheet("background-color: #F2F2F7;")
 
         central_widget = QWidget()
@@ -142,19 +59,15 @@ class SignSpeakApp(QMainWindow):
         self.main_layout.setContentsMargins(40, 40, 40, 40)
         self.main_layout.setSpacing(40)
 
-        # --- LEFT SECTION: CAMERA & CONTROLS ---
-        left_container = QWidget()
-        left_vbox = QVBoxLayout(left_container)
-        left_vbox.setSpacing(20)
-        
-        title = QLabel("SignSpeak")
+        # -- LEFT: AR VIDEO FEED --
+        left_vbox = QVBoxLayout()
+        title = QLabel("Rehab AR Assistant")
         title.setStyleSheet("font-size: 38px; font-weight: 800; color: #1C1C1E; letter-spacing: -1.5px;")
         left_vbox.addWidget(title)
 
-        # Video Display Frame
         self.video_frame = QFrame()
         self.video_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.video_frame.setStyleSheet("background-color: #1C1C1E; border-radius: 30px;")
+        self.video_frame.setStyleSheet("background-color: #000000; border-radius: 30px;")
         
         v_layout = QVBoxLayout(self.video_frame)
         self.video_display = QLabel()
@@ -164,409 +77,292 @@ class SignSpeakApp(QMainWindow):
         shadow = QGraphicsDropShadowEffect(blurRadius=60, xOffset=0, yOffset=25, color=QColor(0,0,0,40))
         self.video_frame.setGraphicsEffect(shadow)
         left_vbox.addWidget(self.video_frame, stretch=1)
+        self.main_layout.addLayout(left_vbox, stretch=3)
 
-        # Control Bar (Buttons at the bottom)
-        self.control_bar = QFrame()
-        self.control_bar.setFixedHeight(85)
-        self.control_bar.setStyleSheet("background-color: white; border-radius: 25px;")
-        
-        cb_shadow = QGraphicsDropShadowEffect(blurRadius=20, xOffset=0, yOffset=10, color=QColor(0,0,0,15))
-        self.control_bar.setGraphicsEffect(cb_shadow)
-        
-        cb_l = QHBoxLayout(self.control_bar)
-        cb_l.setContentsMargins(25, 10, 25, 10)
-        
-        
-        
-        # Button: Reconstruct Sentence
-        self.nlp_btn = QPushButton("✨ RECONSTRUCT SENTENCE")
-        self.nlp_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self.nlp_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #007AFF; color: white; font-size: 14px;
-                font-weight: 800; border-radius: 20px; padding: 12px 25px;
-            }
-            QPushButton:hover { background-color: #0056b3; }
-            QPushButton:pressed { background-color: #003d82; }
-            QPushButton:disabled { background-color: #A0C9F0; }
+        # -- RIGHT: CONTROLS & METRICS --
+        right_vbox = QVBoxLayout()
+        right_vbox.setSpacing(25)
+
+        selection_label = QLabel("Target Exercise")
+        selection_label.setStyleSheet("font-size: 18px; font-weight: 700; color: #8E8E93;")
+        right_vbox.addWidget(selection_label)
+
+        self.primary_combo = QComboBox()
+        self.primary_combo.addItems(["Select Region...", "Full Body", "Hands (Upper Body)", "Legs (Lower Body)"])
+        self.primary_combo.setStyleSheet(self.combo_style())
+        self.primary_combo.currentTextChanged.connect(self.update_sub_combo)
+        right_vbox.addWidget(self.primary_combo)
+
+        self.secondary_combo = QComboBox()
+        self.secondary_combo.addItem("Waiting for region selection...")
+        self.secondary_combo.setStyleSheet(self.combo_style())
+        right_vbox.addWidget(self.secondary_combo)
+
+        self.toggle_btn = QPushButton("START EXERCISE")
+        self.toggle_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.toggle_btn.setStyleSheet("""
+            QPushButton { background-color: #34C759; color: white; font-size: 16px; 
+                          font-weight: 800; border-radius: 20px; padding: 18px; }
+            QPushButton:hover { background-color: #2EAF4E; }
         """)
-        self.nlp_btn.clicked.connect(self.run_nlp_reconstruction)
-        cb_l.addWidget(self.nlp_btn)
+        self.toggle_btn.clicked.connect(self.toggle_exercise)
+        right_vbox.addWidget(self.toggle_btn)
 
-        # Button: Clear History
-        self.clear_btn = QPushButton("CLEAR")
-        self.clear_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self.clear_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #000000; color: white; font-size: 14px;
-                font-weight: 800; border-radius: 20px; padding: 12px 25px; margin-left: 10px;
-            }
-            QPushButton:hover { background-color: #D32F2F; }
-            QPushButton:pressed { background-color: #B71C1C; }
-        """)
-        self.clear_btn.clicked.connect(self.clear_history)
-        cb_l.addWidget(self.clear_btn)
+        self.metrics_card = QFrame()
+        self.metrics_card.setStyleSheet("background-color: white; border-radius: 25px;")
+        metrics_shadow = QGraphicsDropShadowEffect(blurRadius=20, xOffset=0, yOffset=10, color=QColor(0,0,0,15))
+        self.metrics_card.setGraphicsEffect(metrics_shadow)
+        
+        m_layout = QVBoxLayout(self.metrics_card)
+        m_layout.setContentsMargins(30, 30, 30, 30)
+        
+        rep_title = QLabel("REPETITIONS")
+        rep_title.setStyleSheet("color: #8E8E93; font-size: 14px; font-weight: 800;")
+        self.rep_label = QLabel("0")
+        self.rep_label.setStyleSheet("color: #1C1C1E; font-size: 64px; font-weight: 900;")
+        
+        m_layout.addWidget(rep_title)
+        m_layout.addWidget(self.rep_label)
+        right_vbox.addWidget(self.metrics_card)
 
-        # Button: Text-to-Speech
-        self.speech_btn = QPushButton("🔊 SPEECH")
-        self.speech_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self.speech_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #AF52DE; color: white; font-size: 14px;
-                font-weight: 800; border-radius: 20px; padding: 12px 25px; margin-left: 10px;
-            }
-            QPushButton:hover { background-color: #8E3BB8; }
-            QPushButton:pressed { background-color: #6C2B8C; }
-        """)
-        self.speech_btn.clicked.connect(self.speak_text)
-        cb_l.addWidget(self.speech_btn)
+        self.feedback_card = QFrame()
+        self.feedback_card.setFixedHeight(180)
+        self.feedback_card.setStyleSheet("background: #007AFF; border-radius: 25px;")
         
-        cb_l.addStretch()
+        fb_layout = QVBoxLayout(self.feedback_card)
+        fb_title = QLabel("CLINICAL FEEDBACK")
+        fb_title.setStyleSheet("color: rgba(255,255,255,0.8); font-size: 12px; font-weight: 800;")
         
-        # Engine Status Indicator
-        self.status_label = QLabel("● AI ENGINE READY")
-        self.status_label.setStyleSheet("color: #34C759; font-weight: 800; font-size: 13px; letter-spacing: 1px;")
-        cb_l.addWidget(self.status_label)
-        left_vbox.addWidget(self.control_bar)
+        self.ui_feedback_text = QLabel(self.feedback_text)
+        self.ui_feedback_text.setWordWrap(True)
+        self.ui_feedback_text.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.ui_feedback_text.setStyleSheet("color: white; font-size: 22px; font-weight: 700; margin-top: 10px;")
+        
+        fb_layout.addWidget(fb_title)
+        fb_layout.addWidget(self.ui_feedback_text)
+        right_vbox.addWidget(self.feedback_card)
 
-        # --- RIGHT SECTION: DATA & SETTINGS ---
-        right_container = QWidget()
-        right_container.setFixedWidth(400)
-        right_vbox = QVBoxLayout(right_container)
-        right_vbox.setSpacing(20)
-
-        # NLP Interpretation Card (Displays the translated sentence)
-        self.nlp_card = QFrame()
-        self.nlp_card.setFixedHeight(220)
-        self.nlp_card.setStyleSheet("""
-            QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #007AFF, stop:1 #0051FF);
-                border-radius: 30px;
-            }
-        """)
-        nlp_shadow = QGraphicsDropShadowEffect(blurRadius=40, xOffset=0, yOffset=15, color=QColor(0, 122, 255, 80))
-        self.nlp_card.setGraphicsEffect(nlp_shadow)
-        
-        nlp_l = QVBoxLayout(self.nlp_card)
-        nlp_l.setContentsMargins(30, 30, 30, 30)
-        
-        nlp_tag = QLabel("AI INTERPRETATION")
-        nlp_tag.setStyleSheet("color: rgba(255,255,255,0.8); font-size: 12px; font-weight: 800; background: transparent;")
-        self.nlp_text = QLabel("Waiting for input...")
-        self.nlp_text.setWordWrap(True)
-        self.nlp_text.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self.nlp_text.setStyleSheet("color: white; font-size: 20px; font-weight: 700; background: transparent; margin-top: 10px;")
-        
-        nlp_l.addWidget(nlp_tag)
-        nlp_l.addWidget(self.nlp_text)
-        right_vbox.addWidget(self.nlp_card)
-
-        # Slider: Lock-in Timing Adjustment
-        slider_layout = QVBoxLayout()
-        slider_header = QHBoxLayout()
-        sl_label = QLabel("Lock-in Time:")
-        sl_label.setStyleSheet("font-size: 15px; font-weight: 700; color: #8E8E93;")
-        self.sl_val_label = QLabel("1.0s")
-        self.sl_val_label.setStyleSheet("font-size: 15px; font-weight: 800; color: #007AFF;")
-        
-        slider_header.addWidget(sl_label)
-        slider_header.addStretch()
-        slider_header.addWidget(self.sl_val_label)
-        
-        self.delay_slider = QSlider(Qt.Horizontal)
-        self.delay_slider.setMinimum(1)   
-        self.delay_slider.setMaximum(100) 
-        self.delay_slider.setValue(10)    
-        self.delay_slider.setStyleSheet("""
-            QSlider::groove:horizontal { border-radius: 4px; height: 8px; background: #E5E5EA; }
-            QSlider::handle:horizontal { background: #007AFF; width: 18px; margin: -5px 0; border-radius: 9px; }
-        """)
-        self.delay_slider.valueChanged.connect(self.on_slider_change)
-        
-        slider_layout.addLayout(slider_header)
-        slider_layout.addWidget(self.delay_slider)
-        right_vbox.addLayout(slider_layout)
-
-        # Detection History Panel
-        history_header = QLabel("Detection History")
-        history_header.setStyleSheet("font-size: 18px; font-weight: 700; color: #8E8E93; margin-top: 5px;")
-        right_vbox.addWidget(history_header)
-
-        # Create 3 History Cards programmatically
-        self.history_cards = []
-        for i in range(3):
-            is_latest = (i == 0) # Highlight the top card
-            card = self.create_ios_card(is_latest)
-            self.history_cards.append(card)
-            right_vbox.addWidget(card)
-        
         right_vbox.addStretch()
-        self.main_layout.addWidget(left_container, stretch=3)
-        self.main_layout.addWidget(right_container, stretch=1)
+        self.main_layout.addLayout(right_vbox, stretch=1)
 
-    # --- ACTION METHODS ---
+    def combo_style(self):
+        return """
+            QComboBox { background-color: white; border-radius: 15px; padding: 12px 20px;
+                        font-size: 16px; font-weight: 600; color: #1C1C1E; border: 1px solid #E5E5EA; }
+            QComboBox::drop-down { border: none; }
+        """
 
-    def speak_text(self):
-        """Triggers the OS text-to-speech engine to read the NLP output."""
-        text_to_read = self.nlp_text.text()
-        if text_to_read and text_to_read != "Waiting for input..." and "ERROR" not in text_to_read:
-            self.tts.say(text_to_read)
+    def update_sub_combo(self, text):
+        self.secondary_combo.clear()
+        if text == "Full Body":
+            self.secondary_combo.addItems(["Squat (Hips, Knees, Ankles)"])
+        elif text == "Hands (Upper Body)":
+            self.secondary_combo.addItems(["Elbow Flexion (Bicep Curl)"])
+        elif text == "Legs (Lower Body)":
+            self.secondary_combo.addItems(["Knee Extension"])
 
-    def clear_history(self):
-        """Resets all backend memory buffers and clears the UI history cards."""
-        self.word_buffer.clear()
-        self.last_detected_word = None
-        self.current_proposed_word = None
-        self.proposed_word_start_time = time.time()
+    def toggle_exercise(self):
+        self.is_exercising = not self.is_exercising
+        self.angle_buffer.clear() # Clear smoothing buffer on start
         
-        self.nlp_text.setText("Waiting for input...")
-        for card in self.history_cards:
-            card.text_widget.setText("---")
-
-    def on_slider_change(self, value):
-        """Updates the stabilization timer based on slider input."""
-        self.stabilization_threshold = value / 10.0
-        self.sl_val_label.setText(f"{self.stabilization_threshold:.1f}s")
-
-    def create_ios_card(self, is_latest=False):
-        """Helper to create visually appealing UI cards for the detection history."""
-        card = QFrame()
-        card_shadow = QGraphicsDropShadowEffect(blurRadius=20, xOffset=0, yOffset=8, color=QColor(0,0,0,10))
-        card.setGraphicsEffect(card_shadow)
-        
-        if is_latest:
-            card.setFixedHeight(110)
-            card.setStyleSheet("background-color: #E5F1FF; border: 2px solid #007AFF; border-radius: 25px;")
-            tag_text = "CURRENT SIGN"
-            tag_color = "#007AFF"
-            txt_color = "#007AFF"
-            txt_size = "28px"
+        if self.is_exercising:
+            self.toggle_btn.setText("STOP EXERCISE")
+            self.toggle_btn.setStyleSheet("QPushButton { background-color: #FF3B30; color: white; font-size: 16px; font-weight: 800; border-radius: 20px; padding: 18px; }")
+            self.rep_count = 0
+            self.rep_label.setText("0")
+            self.current_stage = "down"
+            self.set_feedback("Position yourself in the frame.", (255, 255, 255))
         else:
-            card.setFixedHeight(90)
-            card.setStyleSheet("background-color: white; border: none; border-radius: 25px;")
-            tag_text = "PREVIOUS SIGN"
-            tag_color = "#8E8E93"
-            txt_color = "#1C1C1E"
-            txt_size = "22px"
+            self.toggle_btn.setText("START EXERCISE")
+            self.toggle_btn.setStyleSheet("QPushButton { background-color: #34C759; color: white; font-size: 16px; font-weight: 800; border-radius: 20px; padding: 18px; }")
+            self.set_feedback("Exercise stopped. Good job!", (255, 255, 255))
 
-        v = QVBoxLayout(card)
-        v.setContentsMargins(25, 15, 25, 15)
-        v.setAlignment(Qt.AlignVCenter)
+    def set_feedback(self, text, rgb_color):
+        self.feedback_text = text
+        self.ui_feedback_text.setText(text)
         
-        tag = QLabel(tag_text)
-        tag.setStyleSheet(f"font-size: 10px; font-weight: 800; color: {tag_color}; border: none; background: transparent;")
+        if rgb_color == (0, 255, 0): bg = "#34C759"
+        elif rgb_color == (255, 0, 0): bg = "#FF3B30"
+        else: bg = "#007AFF"
+        self.feedback_card.setStyleSheet(f"background: {bg}; border-radius: 25px;")
+
+        current_time = time.time()
+        if current_time - self.last_speech_time > 3.0: 
+            self.tts.say(text)
+            self.last_speech_time = current_time
+
+    def are_landmarks_visible(self, landmarks, required_indices, threshold=0.6):
+        """Checks if all required joints for an exercise are clearly visible to prevent false tracking."""
+        for idx in required_indices:
+            if landmarks[idx].visibility < threshold:
+                return False
+        return True
+
+    def calculate_angle(self, a, b, c):
+        """Computes and smooths the 2D angle between 3 points."""
+        a, b, c = np.array(a), np.array(b), np.array(c)
+        radians = np.arctan2(c[1]-b[1], c[0]-b[0]) - np.arctan2(a[1]-b[1], a[0]-b[0])
+        angle = np.abs(radians*180.0/np.pi)
+        if angle > 180.0: angle = 360 - angle
         
-        txt = QLabel("---")
-        txt.setStyleSheet(f"font-size: {txt_size}; font-weight: 800; color: {txt_color}; border: none; background: transparent;")
+        # Temporal Smoothing (Low-Pass Filter)
+        self.angle_buffer.append(angle)
+        smoothed_angle = sum(self.angle_buffer) / len(self.angle_buffer)
+        return smoothed_angle
+
+    def draw_text_with_bg(self, img, text, pos, font_scale=0.7, text_color=(255, 255, 255), bg_color=(0, 0, 0)):
+        """Draws high-visibility text with a semi-transparent dark background."""
+        font = cv.FONT_HERSHEY_DUPLEX
+        thickness = 2
+        (text_width, text_height), baseline = cv.getTextSize(text, font, font_scale, thickness)
         
-        v.addWidget(tag)
-        v.addWidget(txt)
-        card.text_widget = txt
-        return card
+        x, y = pos
+        # Draw background rectangle
+        overlay = img.copy()
+        cv.rectangle(overlay, (x - 5, y + baseline), (x + text_width + 5, y - text_height - 5), bg_color, -1)
+        cv.addWeighted(overlay, 0.6, img, 0.4, 0, img) # 60% opacity background
+        
+        # Draw text
+        cv.putText(img, text, (x, y), font, font_scale, text_color, thickness, cv.LINE_AA)
 
+    def draw_neon_skeleton(self, img, landmarks):
+        """Draws a futuristic, glowing skeleton instead of standard MediaPipe lines."""
+        h, w, _ = img.shape
+        # Define major connections for a clean look
+        connections = [
+            (self.mp_pose.PoseLandmark.LEFT_SHOULDER, self.mp_pose.PoseLandmark.LEFT_ELBOW),
+            (self.mp_pose.PoseLandmark.LEFT_ELBOW, self.mp_pose.PoseLandmark.LEFT_WRIST),
+            (self.mp_pose.PoseLandmark.RIGHT_SHOULDER, self.mp_pose.PoseLandmark.RIGHT_ELBOW),
+            (self.mp_pose.PoseLandmark.RIGHT_ELBOW, self.mp_pose.PoseLandmark.RIGHT_WRIST),
+            (self.mp_pose.PoseLandmark.LEFT_SHOULDER, self.mp_pose.PoseLandmark.RIGHT_SHOULDER),
+            (self.mp_pose.PoseLandmark.LEFT_SHOULDER, self.mp_pose.PoseLandmark.LEFT_HIP),
+            (self.mp_pose.PoseLandmark.RIGHT_SHOULDER, self.mp_pose.PoseLandmark.RIGHT_HIP),
+            (self.mp_pose.PoseLandmark.LEFT_HIP, self.mp_pose.PoseLandmark.RIGHT_HIP),
+            (self.mp_pose.PoseLandmark.LEFT_HIP, self.mp_pose.PoseLandmark.LEFT_KNEE),
+            (self.mp_pose.PoseLandmark.LEFT_KNEE, self.mp_pose.PoseLandmark.LEFT_ANKLE),
+            (self.mp_pose.PoseLandmark.RIGHT_HIP, self.mp_pose.PoseLandmark.RIGHT_KNEE),
+            (self.mp_pose.PoseLandmark.RIGHT_KNEE, self.mp_pose.PoseLandmark.RIGHT_ANKLE)
+        ]
 
+        # Draw glowing bones
+        for connection in connections:
+            start_idx, end_idx = connection[0].value, connection[1].value
+            
+            # Only draw if both joints are visible
+            if landmarks[start_idx].visibility > 0.5 and landmarks[end_idx].visibility > 0.5:
+                start_pt = (int(landmarks[start_idx].x * w), int(landmarks[start_idx].y * h))
+                end_pt = (int(landmarks[end_idx].x * w), int(landmarks[end_idx].y * h))
+                
+                # Neon Glow Effect (Cyan)
+                cv.line(img, start_pt, end_pt, (255, 255, 0), 6, cv.LINE_AA) # Outer glow
+                cv.line(img, start_pt, end_pt, (255, 255, 255), 2, cv.LINE_AA) # Inner core
+                
+        # Draw glowing joints
+        for lm in landmarks:
+            if lm.visibility > 0.5:
+                pt = (int(lm.x * w), int(lm.y * h))
+                cv.circle(img, pt, 5, (0, 255, 255), -1, cv.LINE_AA) # Yellow outer
+                cv.circle(img, pt, 2, (255, 255, 255), -1, cv.LINE_AA) # White inner
 
+    def process_rehabilitation_logic(self, img, landmarks):
+        if not self.is_exercising: return
+        exercise = self.secondary_combo.currentText()
+        h, w, _ = img.shape
+        
+        try:
+            if exercise == "Elbow Flexion (Bicep Curl)":
+                required = [self.mp_pose.PoseLandmark.LEFT_SHOULDER.value,
+                            self.mp_pose.PoseLandmark.LEFT_ELBOW.value,
+                            self.mp_pose.PoseLandmark.LEFT_WRIST.value]
+                            
+                if not self.are_landmarks_visible(landmarks, required):
+                    self.draw_text_with_bg(img, "WARNING: Left Arm Occluded", (50, 50), text_color=(0,0,255))
+                    return
 
-    # --- CORE COMPUTER VISION LOOP ---
+                shoulder = [landmarks[required[0]].x * w, landmarks[required[0]].y * h]
+                elbow = [landmarks[required[1]].x * w, landmarks[required[1]].y * h]
+                wrist = [landmarks[required[2]].x * w, landmarks[required[2]].y * h]
+                
+                angle = self.calculate_angle(shoulder, elbow, wrist)
+                
+                if angle > 150:
+                    self.current_stage = "down"
+                    self.set_feedback("Good extension. Now curl upwards.", (0, 122, 255))
+                    color = (255, 150, 0) # Neon Blue for waiting
+                if angle < 40 and self.current_stage == "down":
+                    self.current_stage = "up"
+                    self.rep_count += 1
+                    self.rep_label.setText(str(self.rep_count))
+                    self.set_feedback("Perfect curl! Slowly lower it.", (0, 255, 0))
+                    color = (0, 255, 0) # Neon Green for success
+                elif 40 <= angle <= 150:
+                    color = (0, 255, 255) # Yellow in motion
+                    
+                # AR Joint Highlight
+                elbow_pt = tuple(np.multiply(elbow, 1).astype(int))
+                cv.circle(img, elbow_pt, 20, color, 3, cv.LINE_AA)
+                self.draw_text_with_bg(img, f"Angle: {int(angle)}/deg", (elbow_pt[0] + 30, elbow_pt[1]))
+
+            elif exercise == "Squat (Hips, Knees, Ankles)":
+                required = [self.mp_pose.PoseLandmark.LEFT_HIP.value,
+                            self.mp_pose.PoseLandmark.LEFT_KNEE.value,
+                            self.mp_pose.PoseLandmark.LEFT_ANKLE.value]
+                            
+                if not self.are_landmarks_visible(landmarks, required):
+                    self.draw_text_with_bg(img, "WARNING: Left Leg Occluded", (50, 50), text_color=(0,0,255))
+                    return
+
+                hip = [landmarks[required[0]].x * w, landmarks[required[0]].y * h]
+                knee = [landmarks[required[1]].x * w, landmarks[required[1]].y * h]
+                ankle = [landmarks[required[2]].x * w, landmarks[required[2]].y * h]
+                
+                angle = self.calculate_angle(hip, knee, ankle)
+                
+                if angle > 160:
+                    self.current_stage = "up"
+                    self.set_feedback("Keep your back straight and lower your hips.", (0, 122, 255))
+                    color = (255, 150, 0)
+                if angle < 90 and self.current_stage == "up":
+                    self.current_stage = "down"
+                    self.rep_count += 1
+                    self.rep_label.setText(str(self.rep_count))
+                    self.set_feedback("Great depth! Drive up through your heels.", (0, 255, 0))
+                    color = (0, 255, 0)
+                elif 90 <= angle <= 160:
+                    if self.current_stage == "up":
+                        self.set_feedback("Go lower... aim for 90 degrees.", (255, 0, 0))
+                    color = (0, 255, 255)
+
+                knee_pt = tuple(np.multiply(knee, 1).astype(int))
+                cv.circle(img, knee_pt, 25, color, 4, cv.LINE_AA)
+                self.draw_text_with_bg(img, f"Depth Angle: {int(angle)}/deg", (knee_pt[0] + 35, knee_pt[1]))
+                
+        except Exception as e:
+            pass 
 
     def main_loop(self):
-        """
-        Runs every 30ms. Reads the camera, detects hands, classifies the gesture, 
-        and updates the holographic UI overlay.
-        """
         ret, frame = self.cap.read()
         if not ret: return
         
-        # Mirror image for natural user experience
-        frame = cv.flip(frame, 1)
-        debug_image = copy.deepcopy(frame) # Used to draw the AR holograms
-        rgb_image = cv.cvtColor(frame, cv.COLOR_BGR2RGB) # MediaPipe requires RGB
+        frame = cv.flip(frame, 1) 
+        rgb_image = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
         
-        # Detect hands
-        results = self.hands.process(rgb_image)
-
-        if results.multi_hand_landmarks:
-            hand_data = []
-            for hand_landmarks in results.multi_hand_landmarks:
-                # 1. Extract raw coordinates
-                lp = self.calc_landmark_list(debug_image, hand_landmarks)
-                # 2. Normalize relative to the wrist
-                pre_processed = self.pre_process_landmark(lp)
-                
-                # 3. Predict the gesture using your custom model
-                prediction = self.keypoint_classifier(pre_processed)
-                if isinstance(prediction, (tuple, list)):
-                    idx, confidence = prediction[0], float(prediction[1])
-                else:
-                    idx, confidence = prediction, 0.0
-                    
-                word = self.keypoint_labels[idx]
-                hand_data.append({"lp": lp, "word": word, "conf": confidence})
-
-            # For stabilization, we only look at the first detected hand
-            current_frame_word = hand_data[0]["word"]
-
-            # --- STABILIZATION LOGIC ---
-            # If the user is holding the SAME sign as the previous frame
-            if current_frame_word == self.current_proposed_word:
-                elapsed = time.time() - self.proposed_word_start_time
-                hold_progress = min(1.0, elapsed / self.stabilization_threshold)
-                
-                # If they held it long enough (surpassed the threshold)
-                if elapsed >= self.stabilization_threshold:
-                    # And it's not just a repeat of the word already logged
-                    if current_frame_word != self.last_detected_word:
-                        self.word_buffer.append(current_frame_word)
-                        self.last_detected_word = current_frame_word
-                        self.update_history_ui(current_frame_word)
-            else:
-                # The sign changed. Reset the timer and tracking.
-                self.current_proposed_word = current_frame_word
-                self.proposed_word_start_time = time.time()
-                hold_progress = 0.0
-
-            # Draw holographic UI components
-            for data in hand_data:
-                self.draw_holographic_ar(debug_image, data["lp"])
-                hp = hold_progress if data["word"] == self.current_proposed_word else 0.0
-                self.draw_confidence_slider(debug_image, data["lp"], data["conf"], data["word"], hp)
-        else:
-            # No hands detected, reset timers
-            self.current_proposed_word = None
-            self.proposed_word_start_time = time.time()
-
-        # Convert the OpenCV image to a PySide6 Pixmap to display in the UI
-        h, w, ch = debug_image.shape
-        qt_img = QImage(debug_image.data, w, h, ch * w, QImage.Format_RGB888).rgbSwapped()
+        results = self.pose.process(rgb_image)
+        
+        if results.pose_landmarks:
+            # Draw custom glowing skeleton
+            self.draw_neon_skeleton(frame, results.pose_landmarks.landmark)
+            # Run calculations and draw metrics
+            self.process_rehabilitation_logic(frame, results.pose_landmarks.landmark)
+            
+        h, w, ch = frame.shape
+        qt_img = QImage(frame.data, w, h, ch * w, QImage.Format_RGB888).rgbSwapped()
         self.video_display.setPixmap(QPixmap.fromImage(qt_img).scaled(
             self.video_display.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
-    # --- NLP INTEGRATION ---
-
-    def run_nlp_reconstruction(self):
-        """Disables buttons and spawns the background NLP thread."""
-        self.status_label.setText("● AI THINKING...")
-        self.status_label.setStyleSheet("color: #FF9F0A; font-weight: 800; font-size: 13px; letter-spacing: 1px;")
-        
-        # Prevent user interaction while processing
-        self.nlp_btn.setEnabled(False)
-        self.clear_btn.setEnabled(False)
-        self.speech_btn.setEnabled(False) 
-        
-        # Pass the current memory buffer to the AI
-        self.nlp_worker = NLPWorker(list(self.word_buffer))
-        self.nlp_worker.finished.connect(self.on_nlp_finished)
-        self.nlp_worker.start()
-
-    def on_nlp_finished(self, text):
-        """Callback for when the NLP thread finishes processing."""
-        self.nlp_text.setText(text)
-        self.status_label.setText("● AI ENGINE READY")
-        self.status_label.setStyleSheet("color: #34C759; font-weight: 800; font-size: 13px; letter-spacing: 1px;")
-        
-        # Re-enable interaction
-        self.nlp_btn.setEnabled(True)
-        self.clear_btn.setEnabled(True)
-        self.speech_btn.setEnabled(True) 
-
-    # --- DRAWING / VISUALS ---
-
-    def draw_holographic_ar(self, img, lp):
-        """Draws the futuristic skeletal connections between MediaPipe hand landmarks."""
-        # Define connections based on human hand anatomy (Thumb, Index, Middle, Ring, Pinky)
-        paths = [(0,1,2,3,4), (0,5,6,7,8), (0,9,10,11,12), (0,13,14,15,16), (0,17,18,19,20)]
-        for path in paths:
-            for i in range(len(path)-1):
-                cv.line(img, tuple(lp[path[i]]), tuple(lp[path[i+1]]), (255, 122, 0), 2, cv.LINE_AA)
-        
-        # Draw the joints
-        for pt in lp:
-            cv.circle(img, tuple(pt), 5, (255, 255, 255), -1, cv.LINE_AA)
-            cv.circle(img, tuple(pt), 7, (255, 122, 0), 1, cv.LINE_AA)
-
-    def draw_confidence_slider(self, img, lp, confidence, word, hold_progress=0.0):
-        """Draws the floating progress bar/timer underneath the hand in real-time."""
-        x_coords = [pt[0] for pt in lp]
-        y_coords = [pt[1] for pt in lp]
-        min_x, max_x = min(x_coords), max(x_coords)
-        max_y = max(y_coords)
-        
-        bar_width = max(140, max_x - min_x) 
-        start_x = min_x + (max_x - min_x) // 2 - bar_width // 2
-        start_y = max_y + 40 
-        
-        # Determine color based on ML confidence score
-        if confidence < 0.5: color = (60, 60, 255)       # Red
-        elif confidence < 0.8: color = (0, 165, 255)     # Orange
-        else: color = (50, 205, 50)                      # Green
-            
-        # Draw translucent background box
-        overlay = img.copy()
-        padding = 15
-        cv.rectangle(overlay, (start_x - padding, start_y - 30), 
-                     (start_x + bar_width + padding, start_y + 22), 
-                     (28, 28, 30), -1)
-        cv.addWeighted(overlay, 0.65, img, 0.35, 0, img)
-        
-        # Draw Confidence Bar
-        cv.line(img, (start_x, start_y), (start_x + bar_width, start_y), (80, 80, 80), 6, cv.LINE_AA)
-        fill_width = int(bar_width * confidence)
-        if fill_width > 0:
-            cv.line(img, (start_x, start_y), (start_x + fill_width, start_y), color, 6, cv.LINE_AA)
-            
-        # Draw Stabilization Timer Bar underneath
-        timer_y = start_y + 10
-        cv.line(img, (start_x, timer_y), (start_x + bar_width, timer_y), (80, 80, 80), 3, cv.LINE_AA)
-        timer_width = int(bar_width * hold_progress)
-        if timer_width > 0:
-            timer_color = (0, 200, 255) if hold_progress < 1.0 else (50, 205, 50)
-            cv.line(img, (start_x, timer_y), (start_x + timer_width, timer_y), timer_color, 3, cv.LINE_AA)
-            
-        # Draw Word Text
-        text = f"{word} ({int(confidence * 100)}%)"
-        font = cv.FONT_HERSHEY_DUPLEX
-        font_scale = 0.45
-        text_size = cv.getTextSize(text, font, font_scale, 1)[0]
-        text_x = start_x + (bar_width - text_size[0]) // 2
-        cv.putText(img, text, (text_x, start_y - 12), font, font_scale, (255, 255, 255), 1, cv.LINE_AA)
-
-    def update_history_ui(self, word):
-        """Shifts older words down and places the newly locked word at the top."""
-        self.history_cards[2].text_widget.setText(self.history_cards[1].text_widget.text())
-        self.history_cards[1].text_widget.setText(self.history_cards[0].text_widget.text())
-        self.history_cards[0].text_widget.setText(word)
-
-    # --- MATH & NORMALIZATION ---
-
-    def calc_landmark_list(self, img, landmarks):
-        """Converts normalized MediaPipe values (0.0 - 1.0) into actual pixel dimensions."""
-        w, h = img.shape[1], img.shape[0]
-        return [[int(lm.x * w), int(lm.y * h)] for lm in landmarks.landmark]
-
-    def pre_process_landmark(self, lp):
-        """
-        Normalizes the hand coordinates so the machine learning model can recognize 
-        the shape regardless of where it is on the screen or how close the hand is to the camera.
-        """
-        temp = copy.deepcopy(lp)
-        
-        # Treat the wrist (point 0) as the origin (0,0)
-        bx, by = temp[0][0], temp[0][1]
-        for i in range(len(temp)):
-            temp[i][0] -= bx
-            temp[i][1] -= by
-            
-        # Flatten the 2D array into a 1D array
-        temp = list(itertools.chain.from_iterable(temp))
-        
-        # Scale all values between -1 and 1
-        max_v = max(map(abs, temp)) if temp else 1
-        return [n / max_v for n in temp]
-
-
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    app.setFont(QFont(".AppleSystemUIFont", 10))
-    window = SignSpeakApp()
+    app.setFont(QFont("Arial", 10))
+    window = RehabPoseApp()
     window.show()
     sys.exit(app.exec())
