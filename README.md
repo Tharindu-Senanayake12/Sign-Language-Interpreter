@@ -1,265 +1,269 @@
-# Sign Language Interpreter
+# 🤟 SignSpeak AI – Real-Time Sign Language Interpreter
 
-A **real-time sign language interpreter** that recognizes hand gestures using computer vision and AI. This project leverages **MediaPipe** for hand landmark detection and **TensorFlow** for gesture classification, providing both static and dynamic gesture recognition with optimized **TensorFlow Lite models** for fast inference.
+**SignSpeak AI** is an advanced real-time sign language interpretation application that bridges the communication gap between sign language users and spoken language.
 
----
+The system combines **computer vision**, **machine learning**, and **natural language processing** to detect hand gestures, classify them into meaningful words, and reconstruct them into grammatically correct spoken sentences.
 
-## Features
-
-* **Real-time hand tracking** using webcam with MediaPipe Hands
-* **Static gesture recognition** using hand keypoint landmarks
-* **Dynamic gesture recognition** using point/motion history
-* **Custom dataset logging** for new gestures (via `app.py`)
-* **Neural network classification** with TensorFlow
-* **Optimized for real-time inference** using TensorFlow Lite
-* **Visualization** of hand landmarks, bounding boxes, and gesture info
+The application features a **modern iOS-inspired graphical interface** and also includes a **developer studio** that allows capturing and training custom sign language datasets.
 
 ---
 
-## Demo
+# ✨ Key Features
 
-<img src="screenshots/dashboard.png" width="700"/>
+### 🖐 Real-Time Hand Tracking & Classification
+Uses **Google MediaPipe** for high-speed and lightweight hand landmark detection.
 
+### 🔍 Dual-Mode Gesture Recognition
+
+**Static Gestures**
+- Detects stationary signs such as alphabets or basic words
+- Uses spatial landmark coordinates of the hand
+
+**Dynamic Gestures**
+- Detects motion-based signs
+- Uses **index finger point history tracking**
+
+### 🧠 NLP Sentence Reconstruction
+Integrates a **Hugging Face T5 Transformer Model** to convert fragmented gesture keywords into grammatically correct sentences.
+
+Example:
+
+```
+ME GO STORE
+```
+
+becomes
+
+```
+I am going to the store.
+```
+
+### 🔊 Native Text-to-Speech
+The reconstructed sentence can be spoken aloud using built-in speech synthesis.
+
+### 🧑‍💻 Built-in Developer Studio
+A dedicated UI mode for capturing gesture datasets and exporting them directly into CSV files for training custom models.
+
+### 🎨 Modern GUI
+Built with **PySide6 (Qt)** featuring:
+
+- Smooth animations
+- Drop shadows
+- Lock-in gesture detection sliders
+- Responsive camera feed
 
 ---
 
-## Technologies & Tools
+# 📸 Screenshots
 
-* **Programming Language:** Python 3.10+
-* **Computer Vision:** OpenCV, MediaPipe
-* **Machine Learning:** TensorFlow, TensorFlow Lite, NumPy, scikit-learn
-* **Data Handling:** CSV
-* **Visualization:** Matplotlib, Seaborn (for evaluation)
+## Main Translation Dashboard
+
+<div align="center">
+<img src="screenshots/main_dashboard.png" width="800">
+<p><i>Main translation dashboard with real-time gesture tracking and NLP interpretation.</i></p>
+</div>
+
+## Developer Studio Mode
+
+<div align="center">
+<img src="screenshots/developer_mode.png" width="800">
+<p><i>Developer studio interface for capturing and labeling gesture datasets.</i></p>
+</div>
 
 ---
 
-## Project Structure
+# 🛠 Technology Stack
+
+| Category | Technology |
+|--------|--------|
+| Language | Python |
+| Computer Vision | OpenCV, MediaPipe |
+| Machine Learning | TensorFlow / Keras (TFLite) |
+| NLP | Hugging Face Transformers, PyTorch |
+| GUI | PySide6 (Qt) |
+
+---
+
+# 📂 Project Structure
 
 ```
 sign-language-interpreter/
 │
-├─ app.py                       # Main application for real-time gesture recognition
-├─ model/
-│  ├─ keypoint_classifier/
-│  │  ├─ keypoint_classifier.hdf5  # Trained Keras model
-│  │  ├─ keypoint_classifier.tflite # Optimized TFLite model for inference
-│  │  ├─ keypoint.csv              # Collected keypoint dataset
-│  │  └─ keypoint_classifier_label.csv  # Gesture labels
-│  └─ point_history_classifier/
-│     ├─ point_history_classifier.hdf5
-│     ├─ point_history_classifier.tflite
-│     └─ point_history_classifier_label.csv
-├─ keypoint_classification.ipynb  # Training and TFLite conversion notebook
-├─ utils.py                       # Utility functions for FPS and visualization
-├─ screenshots/                   # Screenshots or demo images
-└─ requirements.txt               # Python dependencies
+├── app.py
+│   Main application (UI, Computer Vision loop, NLP engine)
+│
+├── model/
+│   ├── keypoint_classifier/
+│   │   ├── keypoint_classifier.tflite
+│   │   ├── keypoint.csv
+│   │   └── keypoint_classifier_label.csv
+│   │
+│   └── point_history_classifier/
+│       ├── point_history_classifier.tflite
+│       ├── point_history.csv
+│       └── point_history_classifier_label.csv
+│
+├── keypoint_classification.ipynb
+│   Training notebook for static gesture models
+│
+├── point_history_classification.ipynb
+│   Training notebook for dynamic gesture models
+│
+├── requirements.txt
+│   Python dependencies
+│
+└── README.md
 ```
 
 ---
 
-## Installation
+# 🚀 Installation & Setup
 
-1. Clone the repository:
+## 1 Clone the Repository
 
 ```bash
-git clone https://github.com/<your-username>/sign-language-interpreter.git
-cd sign-language-interpreter
+git clone https://github.com/YOUR_USERNAME/SignSpeak-AI.git
+cd SignSpeak-AI
 ```
 
-2. Create a virtual environment:
+## 2 Create a Virtual Environment (Recommended)
 
 ```bash
 python -m venv venv
-source venv/bin/activate       # Linux/macOS
-venv\Scripts\activate          # Windows
 ```
 
-3. Install dependencies:
+Activate the environment:
+
+**Windows**
+
+```bash
+venv\Scripts\activate
+```
+
+**Linux / macOS**
+
+```bash
+source venv/bin/activate
+```
+
+---
+
+## 3 Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
+Make sure **torch** and **sentencepiece** are installed for the NLP engine.
+
 ---
 
-## Usage
-
-1. Run the real-time interpreter:
+## 4 Run the Application
 
 ```bash
 python app.py
 ```
 
-2. Controls:
+**Note**
 
-* `ESC` – Exit the application
-* `k` – Switch to keypoint logging mode
-* `n` – Switch to point history logging mode
-* `0-99` – Input gesture label for logging (can go for upto 100 different sign languages)
-* `Enter` – Confirm label
-* `p` – Save gesture sample for dataset (Capture)
+During the first run the application will download the **Hugging Face T5 model (~850MB)**.  
+Please wait until the **AI THINKING** status completes.
 
 ---
 
-## Training Your Own Model
+# 📖 How to Use
 
-1. Collect keypoint data via `app.py`. Make sure `mode=1` (keypoint logging).
-2. Open `keypoint_classification.ipynb` and run the notebook to train the model.
-3. The trained model will be saved as:
+## 🗣 Translation Mode (Default)
 
-   * Keras: `keypoint_classifier.hdf5`
-   * TensorFlow Lite: `keypoint_classifier.tflite`
-4. Replace the models in `model/keypoint_classifier/` for inference.
+1. Stand in front of your webcam
+2. Perform a sign gesture
+3. Hold the sign until the **Lock-in Timer** fills up
+4. The detected word will be added to the history buffer
+5. Click **Reconstruct Sentence** to generate a grammatically correct sentence
+6. Click **Speech** to hear the output
 
----
-
-## Evaluation
-
-* Accuracy and confusion matrix are calculated using the notebook.
-* Misclassified gestures can be improved by adding more samples or augmenting the dataset.
+You can adjust detection speed using the **Lock-in Time Slider**.
 
 ---
 
-## Future Improvements
+## 🧑‍💻 Developer Studio (Dataset Logging Mode)
 
-* Support **sentence-level interpretation** by combining gestures
-* Build a **cross-platform GUI** or mobile application
+To train the AI with new gestures:
 
----
+Click **ENTER LOGGING MODE**.
 
+### Keyboard Shortcuts
 
-
-
-=======
-# Sign Language Interpreter
-
-A **real-time sign language interpreter** that recognizes hand gestures using computer vision and AI. This project leverages **MediaPipe** for hand landmark detection and **TensorFlow** for gesture classification, providing both static and dynamic gesture recognition with optimized **TensorFlow Lite models** for fast inference.
-
----
-
-## Features
-
-* **Real-time hand tracking** using webcam with MediaPipe Hands
-* **Static gesture recognition** using hand keypoint landmarks
-* **Dynamic gesture recognition** using point/motion history
-* **Custom dataset logging** for new gestures (via `app.py`)
-* **Neural network classification** with TensorFlow
-* **Optimized for real-time inference** using TensorFlow Lite
-* **Visualization** of hand landmarks, bounding boxes, and gesture info
+| Key | Action |
+|----|----|
+| **K** | Static keypoint logging mode |
+| **N** | Dynamic motion logging mode |
+| **0–99** | Set gesture label ID |
+| **Enter** | Confirm label ID |
+| **P** | Capture frame and append to CSV |
+| **ESC** | Exit application |
 
 ---
 
-## Demo
+# 🧠 Training Custom Models
 
-<img src="screenshots/dashboard.png" width="700"/>
+After capturing enough gesture data:
 
-
----
-
-## Technologies & Tools
-
-* **Programming Language:** Python 3.10+
-* **Computer Vision:** OpenCV, MediaPipe
-* **Machine Learning:** TensorFlow, TensorFlow Lite, NumPy, scikit-learn
-* **Data Handling:** CSV
-* **Visualization:** Matplotlib, Seaborn (for evaluation)
-
----
-
-## Project Structure
+1. Open one of the notebooks:
 
 ```
-sign-language-interpreter/
-│
-├─ app.py                       # Main application for real-time gesture recognition
-├─ model/
-│  ├─ keypoint_classifier/
-│  │  ├─ keypoint_classifier.hdf5  # Trained Keras model
-│  │  ├─ keypoint_classifier.tflite # Optimized TFLite model for inference
-│  │  ├─ keypoint.csv              # Collected keypoint dataset
-│  │  └─ keypoint_classifier_label.csv  # Gesture labels
-│  └─ point_history_classifier/
-│     ├─ point_history_classifier.hdf5
-│     ├─ point_history_classifier.tflite
-│     └─ point_history_classifier_label.csv
-├─ keypoint_classification.ipynb  # Training and TFLite conversion notebook
-├─ utils.py                       # Utility functions for FPS and visualization
-├─ screenshots/                   # Screenshots or demo images
-└─ requirements.txt               # Python dependencies
+keypoint_classification.ipynb
 ```
 
----
+or
 
-## Installation
-
-1. Clone the repository:
-
-```bash
-git clone https://github.com/<your-username>/sign-language-interpreter.git
-cd sign-language-interpreter
+```
+point_history_classification.ipynb
 ```
 
-2. Create a virtual environment:
+2. Update the variable:
 
-```bash
-python -m venv venv
-source venv/bin/activate       # Linux/macOS
-venv\Scripts\activate          # Windows
+```
+NUM_CLASSES
 ```
 
-3. Install dependencies:
+to match the highest label ID used.
 
-```bash
-pip install -r requirements.txt
+3. Ensure label names are correctly updated in:
+
+```
+model/.../label.csv
 ```
 
----
+4. Run all notebook cells.
 
-## Usage
+The notebook will:
 
-1. Run the real-time interpreter:
+- Train the neural network
+- Validate model accuracy
+- Export an optimized **.tflite model**
 
-```bash
-python app.py
-```
-
-2. Controls:
-
-* `ESC` – Exit the application
-* `k` – Switch to keypoint logging mode
-* `n` – Switch to point history logging mode
-* `0-99` – Input gesture label for logging (can go for upto 100 different sign languages)
-* `Enter` – Confirm label
-* `p` – Save gesture sample for dataset (Capture)
+Restart `app.py` and your new gestures will be recognized.
 
 ---
 
-## Training Your Own Model
+# 📜 License
 
-1. Collect keypoint data via `app.py`. Make sure `mode=1` (keypoint logging).
-2. Open `keypoint_classification.ipynb` and run the notebook to train the model.
-3. The trained model will be saved as:
+Copyright (c) 2026 Tharindu Senanayake
 
-   * Keras: `keypoint_classifier.hdf5`
-   * TensorFlow Lite: `keypoint_classifier.tflite`
-4. Replace the models in `model/keypoint_classifier/` for inference.
+This project includes some of the codes inspired by work from Kazuhito Takahashi.
 
 ---
 
-## Evaluation
+# 🙏 Acknowledgments
 
-* Accuracy and confusion matrix are calculated using the notebook.
-* Misclassified gestures can be improved by adding more samples or augmenting the dataset.
-
----
-
-## Future Improvements
-
-* Support **sentence-level interpretation** by combining gestures
-* Build a **cross-platform GUI** or mobile application
+- Hand tracking powered by **Google MediaPipe**
+- NLP grammar correction powered by **Hugging Face Transformers**
+- Machine learning pipeline inspiration from **Kazuhito00**
 
 ---
 
+# 👨‍💻 Author
 
-
->>>>>>> 46bc94f3f43ebce2cd27687e86521940efceed1a
+Created by **[Tharindu Senanayake]**  
+2026
