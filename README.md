@@ -59,15 +59,42 @@ Built with **PySide6 (Qt)** featuring:
 ## Main Translation Dashboard
 
 <div align="center">
-<img src="screenshots/main_dashboard.png" width="800">
-<p><i>Main translation dashboard with real-time gesture tracking and NLP interpretation.</i></p>
+
+<table>
+<tr>
+<td align="center">
+<img src="screenshots/3.jpg" width="400"><br>
+<i>Real-time gesture tracking interface</i>
+</td>
+
+<td align="center">
+<img src="screenshots/4.jpg" width="400"><br>
+<i>NLP sentence reconstruction and speech output</i>
+</td>
+</tr>
+</table>
+
 </div>
+
 
 ## Developer Studio Mode
 
 <div align="center">
-<img src="screenshots/developer_mode.png" width="800">
-<p><i>Developer studio interface for capturing and labeling gesture datasets.</i></p>
+
+<table>
+<tr>
+<td align="center">
+<img src="screenshots/1.jpg" width="400"><br>
+<i>Dataset logging interface</i>
+</td>
+
+<td align="center">
+<img src="screenshots/2.jpg" width="400"><br>
+<i>Gesture label assignment and capture controls</i>
+</td>
+</tr>
+</table>
+
 </div>
 
 ---
