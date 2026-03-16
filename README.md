@@ -6,6 +6,53 @@ The system combines **computer vision**, **machine learning**, and **natural lan
 
 The application features a **modern iOS-inspired graphical interface** and also includes a **developer studio** that allows capturing and training custom sign language datasets.
 
+
+---
+
+# 📸 Screenshots
+
+## Main Translation Dashboard
+
+<div align="center">
+
+<table>
+<tr>
+<td align="center">
+<img src="screenshots/3.jpg" width="400"><br>
+<i>Real-time gesture tracking interface</i>
+</td>
+
+<td align="center">
+<img src="screenshots/2.jpg" width="400"><br>
+<i>NLP sentence reconstruction and speech output</i>
+</td>
+</tr>
+</table>
+
+</div>
+
+
+## Developer Studio Mode
+
+<div align="center">
+
+<table>
+<tr>
+<td align="center">
+<img src="screenshots/1.jpg" width="400"><br>
+<i>Dataset logging interface</i>
+</td>
+
+<td align="center">
+<img src="screenshots/4.jpg" width="400"><br>
+<i>Gesture label assignment and capture controls</i>
+</td>
+</tr>
+</table>
+
+</div>
+
+
 ---
 
 # ✨ Key Features
@@ -51,51 +98,6 @@ Built with **PySide6 (Qt)** featuring:
 - Drop shadows
 - Lock-in gesture detection sliders
 - Responsive camera feed
-
----
-
-# 📸 Screenshots
-
-## Main Translation Dashboard
-
-<div align="center">
-
-<table>
-<tr>
-<td align="center">
-<img src="screenshots/3.jpg" width="400"><br>
-<i>Real-time gesture tracking interface</i>
-</td>
-
-<td align="center">
-<img src="screenshots/4.jpg" width="400"><br>
-<i>NLP sentence reconstruction and speech output</i>
-</td>
-</tr>
-</table>
-
-</div>
-
-
-## Developer Studio Mode
-
-<div align="center">
-
-<table>
-<tr>
-<td align="center">
-<img src="screenshots/1.jpg" width="400"><br>
-<i>Dataset logging interface</i>
-</td>
-
-<td align="center">
-<img src="screenshots/2.jpg" width="400"><br>
-<i>Gesture label assignment and capture controls</i>
-</td>
-</tr>
-</table>
-
-</div>
 
 ---
 
@@ -287,10 +289,3 @@ This project includes some of the codes inspired by work from Kazuhito Takahashi
 - Hand tracking powered by **Google MediaPipe**
 - NLP grammar correction powered by **Hugging Face Transformers**
 - Machine learning pipeline inspiration from **Kazuhito00**
-
----
-
-# 👨‍💻 Author
-
-Created by **[Tharindu Senanayake]**  
-2026
